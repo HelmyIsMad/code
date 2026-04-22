@@ -15,15 +15,13 @@
   __NOP(); __NOP(); __NOP(); \
 } while(0)
 
-#define HIGH_PASS_ALPHA 0.995f
-#define NOISE_GATE_THRESHOLD 200
+#define DC_BLOCK_ALPHA 0.9995f
 
 uint32_t lastMicros = 0;
 const uint32_t interval = 125;
 
-int32_t hpState = 0;
+int32_t dcState = 0;
 int16_t lastSample = 0;
-uint8_t gateClosed = 0;
 
 void setup() {
   Serial.begin(500000);
@@ -74,19 +72,10 @@ int16_t readSample() {
 }
 
 int16_t applyFilters(int16_t sample) {
-  // High-pass filter (removes DC offset and low frequency rumble)
-  hpState = (int32_t)(HIGH_PASS_ALPHA * (hpState + sample - lastSample));
+  // DC blocker (removes DC offset and low rumble)
+  dcState = sample - lastSample + (int32_t)(DC_BLOCK_ALPHA * dcState);
   lastSample = sample;
-  int16_t hp = (int16_t)hpState;
-
-  // Noise gate (reduce hiss/background noise)
-  if (hp < 0) hp = -hp;
-  if (hp < NOISE_GATE_THRESHOLD) {
-    gateClosed = 1;
-    return 0;
-  }
-  gateClosed = 0;
-  return (int16_t)hpState;
+  return (int16_t)dcState;
 }
 
 void loop() {
