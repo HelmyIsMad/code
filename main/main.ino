@@ -10,15 +10,20 @@
 #define WS_LOW()   (GPIOB->BSRR = (uint32_t)GPIO_PIN_12 << 16)
 #define READ_SD()  (GPIOA->IDR & GPIO_PIN_3)
 
-// Tune this NOP count for your CPU frequency.
-// At 72MHz, 7 NOPs ≈ 100ns — meets most MEMS mic min clock pulse width.
 #define HALF_PERIOD() do { \
   __NOP(); __NOP(); __NOP(); __NOP(); \
   __NOP(); __NOP(); __NOP(); \
 } while(0)
 
+#define HIGH_PASS_ALPHA 0.995f
+#define NOISE_GATE_THRESHOLD 200
+
 uint32_t lastMicros = 0;
-const uint32_t interval = 125; // 8kHz
+const uint32_t interval = 125;
+
+int32_t hpState = 0;
+int16_t lastSample = 0;
+uint8_t gateClosed = 0;
 
 void setup() {
   Serial.begin(500000);
@@ -68,11 +73,28 @@ int16_t readSample() {
   return (int16_t)(data >> 7);
 }
 
+int16_t applyFilters(int16_t sample) {
+  // High-pass filter (removes DC offset and low frequency rumble)
+  hpState = (int32_t)(HIGH_PASS_ALPHA * (hpState + sample - lastSample));
+  lastSample = sample;
+  int16_t hp = (int16_t)hpState;
+
+  // Noise gate (reduce hiss/background noise)
+  if (hp < 0) hp = -hp;
+  if (hp < NOISE_GATE_THRESHOLD) {
+    gateClosed = 1;
+    return 0;
+  }
+  gateClosed = 0;
+  return (int16_t)hpState;
+}
+
 void loop() {
   uint32_t now = micros();
   if (now - lastMicros < interval) return;
-  lastMicros += interval; // Increment, don't reset — prevents drift
+  lastMicros += interval;
 
   int16_t sample = readSample();
+  sample = applyFilters(sample);
   Serial.write((uint8_t*)&sample, 2);
 }
