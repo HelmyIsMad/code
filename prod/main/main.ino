@@ -16,7 +16,7 @@
 #define HALF_PERIOD() do { __NOP(); __NOP(); __NOP(); } while(0)
 
 #define DC_BLOCK_ALPHA 0.995f
-#define NOISE_THRESHOLD 3000
+#define NOISE_THRESHOLD 500
 #define SAMPLE_RATE 16000
 #define DOWNSAMPLED_RATE 2000
 #define DOWNSAMPLE_RATIO (SAMPLE_RATE / DOWNSAMPLED_RATE)
@@ -124,6 +124,7 @@ void loop() {
     lastKeyPress = millis();
     
     if (state == IDLE) {
+      for (int i = 0; i < MAX_SAMPLES; i++) audioBuffer[i] = 0;
       state = RECORDING;
       recordingCount = 0;
       sampleCounter = 0;
@@ -134,13 +135,16 @@ void loop() {
     } else if (state == RECORDING) {
       state = CLASSIFYING;
       digitalWrite(PIN_LED, HIGH);
-      Serial.println("Recording stopped. Classifying...");
+      Serial.print("Recording stopped (");
+      Serial.print(recordingCount);
+      Serial.println(" samples). Classifying...");
       
       int predicted = predictSpeaker(audioBuffer, recordingCount);
       Serial.print("Result: ");
       Serial.println(SPEAKER_NAMES[predicted]);
       
       state = IDLE;
+      recordingCount = 0;
     }
   }
   
@@ -165,6 +169,7 @@ void loop() {
           Serial.println(SPEAKER_NAMES[predicted]);
           
           state = IDLE;
+          recordingCount = 0;
         }
       }
     }
