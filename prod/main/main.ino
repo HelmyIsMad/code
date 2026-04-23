@@ -22,11 +22,6 @@
 #define DOWNSAMPLE_RATIO (SAMPLE_RATE / DOWNSAMPLED_RATE)
 #define MAX_SAMPLES TEMPLATE_SIZE
 
-#define N_FFT 256
-#define HOP_LENGTH 128
-#define N_MELS 10
-#define NUM_FRAMES ((MAX_SAMPLES - N_FFT) / HOP_LENGTH + 1)
-
 enum State { IDLE, RECORDING, CLASSIFYING };
 volatile State state = IDLE;
 volatile uint32_t recordingCount = 0;
@@ -38,11 +33,6 @@ int16_t lastSample = 0;
 uint32_t lastKeyPress = 0;
 uint32_t sampleCounter = 0;
 
-static float hann[N_FFT];
-static bool hannInit = false;
-static float melFilter[N_MELS][N_FFT/2 + 1];
-static bool melInit = false;
-
 void setup() {
   Serial.begin(500000);
   pinMode(PIN_SCK, OUTPUT);
@@ -53,33 +43,7 @@ void setup() {
   digitalWrite(PIN_SCK, LOW);
   digitalWrite(PIN_WS, HIGH);
   digitalWrite(PIN_LED, HIGH);
-  
-  if (!hannInit) {
-    for (int i = 0; i < N_FFT; i++) {
-      hann[i] = 0.5f * (1.0f - cosf(2.0f * PI * i / (N_FFT - 1)));
-    }
-    hannInit = true;
-  }
-  
-  if (!melInit) {
-    float low = 2595.0f * log10f(1.0f + 100.0f / 2595.0f);
-    float high = 2595.0f * log10f(1.0f + 1000.0f / 2595.0f);
-    for (int m = 0; m < N_MELS; m++) {
-      float f1 = 100.0f + (900.0f * m) / N_MELS;
-      float f2 = 100.0f + (900.0f * (m + 1)) / N_MELS;
-      float mel1 = 2595.0f * log10f(1.0f + f1 / 2595.0f);
-      float mel2 = 2595.0f * log10f(1.0f + f2 / 2595.0f);
-      float melC = (mel1 + mel2) * 0.5f;
-      float melW = mel2 - mel1;
-      for (int k = 0; k <= N_FFT/2; k++) {
-        float freq = (float)k * DOWNSAMPLED_RATE / N_FFT;
-        float mel = 2595.0f * log10f(1.0f + freq / 2595.0f);
-        float bank = 1.0f - fabsf(mel - melC) / (melW * 0.5f + 1e-10f);
-        melFilter[m][k] = fmaxf(0, bank);
-      }
-    }
-    melInit = true;
-  }
+  Serial.println("Ready");
 }
 
 inline void clockPulse() {
@@ -117,64 +81,59 @@ int16_t applyFilters(int16_t sample) {
 
 void extractFeatures(const int16_t* audio, int numSamples, float* features) {
   for (int i = 0; i < NUM_FEATURES; i++) features[i] = 0;
+  if (numSamples < 100) return;
   
-  float melSum[N_MELS] = {0};
-  float melSq[N_MELS] = {0};
-  float melMin[N_MELS];
-  float melMax[N_MELS];
-  for (int i = 0; i < N_MELS; i++) {
-    melMin[i] = 1e10f;
-    melMax[i] = -1e10f;
+  float sum = 0, sumSq = 0, maxVal = 0;
+  int zeroCross = 0;
+  int16_t prev = audio[0];
+  
+  for (int i = 0; i < numSamples; i++) {
+    float v = (float)audio[i];
+    sum += fabsf(v);
+    sumSq += v * v;
+    if (fabsf(v) > maxVal) maxVal = fabsf(v);
+    if ((audio[i] > 0 && prev <= 0) || (audio[i] < 0 && prev >= 0)) zeroCross++;
+    prev = audio[i];
   }
   
-  int numFrames = (numSamples - N_FFT) / HOP_LENGTH + 1;
-  if (numFrames <= 0) return;
+  float mean = sum / numSamples;
+  float std = sqrtf(sumSq / numSamples - mean * mean);
   
-  float frameData[N_FFT];
-  float mag[N_FFT/2 + 1];
+  int idx = 0;
+  features[idx++] = mean;
+  features[idx++] = std;
+  features[idx++] = maxVal;
+  features[idx++] = (float)zeroCross / numSamples;
   
-  for (int frame = 0; frame < numFrames; frame++) {
-    int start = frame * HOP_LENGTH;
-    
-    for (int i = 0; i < N_FFT; i++) {
-      frameData[i] = (i < numSamples - start) ? (float)audio[start + i] * hann[i] : 0;
+  // 10 segment energy stats
+  int segSize = numSamples / 10;
+  for (int s = 0; s < 10; s++) {
+    float segSum = 0;
+    for (int i = s*segSize; i < (s+1)*segSize && i < numSamples; i++) {
+      segSum += fabsf((float)audio[i]);
     }
-    
-    for (int k = 0; k <= N_FFT/2; k++) {
-      float real = 0, imag = 0;
-      for (int n = 0; n < N_FFT; n++) {
-        float angle = -2.0f * PI * k * n / N_FFT;
-        real += frameData[n] * cosf(angle);
-        imag += frameData[n] * sinf(angle);
-      }
-      mag[k] = real * real + imag * imag + 1e-10f;
-    }
-    
-    float mel[N_MELS];
-    for (int m = 0; m < N_MELS; m++) {
-      float sum = 0;
-      for (int k = 0; k <= N_FFT/2; k++) {
-        sum += mag[k] * melFilter[m][k];
-      }
-      mel[m] = logf(sum + 1e-10f);
-    }
-    
-    for (int m = 0; m < N_MELS; m++) {
-      melSum[m] += mel[m];
-      melSq[m] += mel[m] * mel[m];
-      if (mel[m] < melMin[m]) melMin[m] = mel[m];
-      if (mel[m] > melMax[m]) melMax[m] = mel[m];
-    }
+    features[idx++] = segSum / segSize;
   }
   
-  for (int m = 0; m < N_MELS; m++) {
-    float mean = melSum[m] / numFrames;
-    float std = sqrtf(fmaxf(0, melSq[m] / numFrames - mean * mean));
-    int idx = m * 4;
-    features[idx] = mean;
-    features[idx + 1] = std;
-    features[idx + 2] = melMin[m];
-    features[idx + 3] = melMax[m];
+  // 10 pitch autocorrelation values
+  for (int lag = 10; lag <= 100; lag += 10) {
+    float ac = 0, ac0 = 0;
+    for (int i = 0; i < numSamples - lag; i++) {
+      ac += (float)audio[i] * (float)audio[i + lag];
+      ac0 += (float)audio[i] * (float)audio[i];
+    }
+    if (ac0 > 0) ac /= ac0;
+    features[idx++] = ac;
+  }
+  
+  // 9 frequency ratio bands (simplified)
+  int seg9 = numSamples / 9;
+  for (int s = 0; s < 9; s++) {
+    float segSum = 0;
+    for (int i = s*seg9; i < (s+1)*seg9 && i < numSamples; i++) {
+      segSum += (float)audio[i] * (float)audio[i];
+    }
+    features[idx++] = segSum;
   }
 }
 
@@ -247,22 +206,23 @@ void loop() {
         if (recordingCount < MAX_SAMPLES) {
           audioBuffer[recordingCount++] = sample;
         }
-        if (recordingCount >= MAX_SAMPLES) {
-          state = CLASSIFYING;
-          digitalWrite(PIN_LED, HIGH);
-          Serial.println("Buffer full. Classifying...");
-          
-          float features[NUM_FEATURES];
-          extractFeatures(audioBuffer, recordingCount, features);
-          
-          int predicted = nearestCentroid(features);
-          Serial.print("Result: ");
-          Serial.println(SPEAKER_NAMES[predicted]);
-          
-          state = IDLE;
-          recordingCount = 0;
-        }
       }
     }
+  }
+  
+  if (state == RECORDING && recordingCount >= MAX_SAMPLES) {
+    state = CLASSIFYING;
+    digitalWrite(PIN_LED, HIGH);
+    Serial.println("Buffer full. Classifying...");
+    
+    float features[NUM_FEATURES];
+    extractFeatures(audioBuffer, recordingCount, features);
+    
+    int predicted = nearestCentroid(features);
+    Serial.print("Result: ");
+    Serial.println(SPEAKER_NAMES[predicted]);
+    
+    state = IDLE;
+    recordingCount = 0;
   }
 }
