@@ -85,18 +85,13 @@ int16_t applyFilters(int16_t sample) {
 
 void extractFeatures(const int16_t* audio, int numSamples, float* features) {
   for (int i = 0; i < NUM_FEATURES; i++) features[i] = 0;
-  if (numSamples < 1000) {
-    Serial.println("Too few samples");
-    return;
-  }
+  if (numSamples < 1000) return;
   
   float maxVal = 0.001f;
   for (int i = 0; i < numSamples; i++) {
     float v = fabsf((float)audio[i]);
     if (v > maxVal) maxVal = v;
   }
-  Serial.print("maxVal=");
-  Serial.println(maxVal);
   
   float sum = 0, sumSq = 0;
   for (int i = 0; i < numSamples; i++) {
@@ -173,8 +168,8 @@ int nearestCentroid(const float* features) {
     scaled[i] = (features[i] - mean[i]) / (scale[i] + 1e-6f);
   }
   
-  float minDist = 1e10f;
-  int predicted = -1;
+  int speakerMinDist[5];
+  for (int s = 0; s < 5; s++) speakerMinDist[s] = INT_MAX;
   
   for (int i = 0; i < NUM_SAMPLES; i++) {
     float dist = 0;
@@ -183,16 +178,20 @@ int nearestCentroid(const float* features) {
       float diff = scaled[j] - cent[j];
       dist += diff * diff;
     }
-    if (dist < minDist) {
-      minDist = dist;
-      predicted = i;
+    
+    int speaker = i / 200;
+    if (speaker < 5 && dist < speakerMinDist[speaker]) {
+      speakerMinDist[speaker] = (int)dist;
     }
   }
-  Serial.print("Predicted index: ");
-  Serial.print(predicted);
-  Serial.print(" dist: ");
-  Serial.println(minDist);
-  return predicted;
+  
+  int bestSpeaker = 0;
+  for (int s = 1; s < 5; s++) {
+    if (speakerMinDist[s] < speakerMinDist[bestSpeaker]) {
+      bestSpeaker = s;
+    }
+  }
+  return bestSpeaker;
 }
 
 void loop() {
