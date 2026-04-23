@@ -119,15 +119,17 @@ void extractFeatures(const int16_t* audio, int numSamples, float* features) {
   float mfccMean[NUM_MFCC] = {0};
   float mfccVar[NUM_MFCC] = {0};
   
+  float frameData[N_FFT];
+  float mag[N_FFT/2 + 1];
+  float spec[NUM_MFCC];
+  
   for (int frame = 0; frame < numFrames; frame++) {
     int start = frame * HOP_LENGTH;
     
-    static float frameData[N_FFT];
     for (int i = 0; i < N_FFT; i++) {
       frameData[i] = (i < numSamples - start) ? (float)audio[start + i] * hann[i] : 0;
     }
     
-    static float mag[N_FFT/2 + 1];
     for (int k = 0; k <= N_FFT/2; k++) {
       float real = 0, imag = 0;
       for (int n = 0; n < N_FFT; n++) {
@@ -138,7 +140,6 @@ void extractFeatures(const int16_t* audio, int numSamples, float* features) {
       mag[k] = sqrtf(real * real + imag * imag) + 1e-10f;
     }
     
-    float spec[NUM_MFCC];
     for (int m = 0; m < NUM_MFCC; m++) {
       float sum = 0;
       for (int k = 0; k <= N_FFT/2; k++) {
