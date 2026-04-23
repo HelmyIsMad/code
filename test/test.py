@@ -31,7 +31,7 @@ try:
         if len(raw_data) == 2:
             wav_file.writeframes(raw_data)
             samples_captured += 1
-            if samples_captured % (SAMPLE_RATE // 2) == 0:
+            if samples_captured % SAMPLE_RATE == 0:
                 print(f"Captured {samples_captured // SAMPLE_RATE} seconds...")
 
 except KeyboardInterrupt:

@@ -15,6 +15,7 @@
 } while(0)
 
 #define DC_BLOCK_ALPHA 0.995f
+#define NOISE_THRESHOLD 3000
 
 uint32_t lastMicros = 0;
 const uint32_t interval = 71.0F;
@@ -74,7 +75,13 @@ int16_t applyFilters(int16_t sample) {
   // DC blocker (removes DC offset and low rumble)
   dcState = sample - lastSample + (int32_t)(DC_BLOCK_ALPHA * dcState);
   lastSample = sample;
-  return (int16_t)dcState;
+  sample = (int16_t)dcState;
+  
+  // Simple noise gate - mute samples below threshold
+  if (abs(sample) < NOISE_THRESHOLD) {
+    return 0;
+  }
+  return sample;
 }
 
 void loop() {
