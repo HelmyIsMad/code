@@ -18,7 +18,7 @@
 #define DC_BLOCK_ALPHA 0.995f
 #define NOISE_THRESHOLD 3000
 #define SAMPLE_RATE 16000
-#define MAX_SAMPLES 48000
+#define MAX_SAMPLES 24000
 
 enum State { IDLE, RECORDING, CLASSIFYING };
 volatile State state = IDLE;
