@@ -18,7 +18,7 @@
 #define DC_BLOCK_ALPHA 0.995f
 #define NOISE_THRESHOLD 3000
 #define SAMPLE_RATE 16000
-#define MAX_SAMPLES (SAMPLE_RATE * 10)
+#define MAX_SAMPLES 8000
 
 enum State { IDLE, RECORDING, CLASSIFYING };
 volatile State state = IDLE;
@@ -76,8 +76,8 @@ int16_t applyFilters(int16_t sample) {
 }
 
 void extractFeatures(const int16_t* audio, int numSamples, float* features) {
-  const int N_FFT = 512;
-  const int HOP_LENGTH = 256;
+  const int N_FFT = 256;
+  const int HOP_LENGTH = 128;
   const int NUM_MFCC = 13;
   
   for (int i = 0; i < NUM_FEATURES; i++) features[i] = 0;
@@ -85,43 +85,49 @@ void extractFeatures(const int16_t* audio, int numSamples, float* features) {
   int numFrames = (numSamples - N_FFT) / HOP_LENGTH + 1;
   if (numFrames <= 0) return;
   
-  float mfccMean[NUM_MFCC] = {0};
-  float mfccVar[NUM_MFCC] = {0};
-  
-  float hann[512];
-  for (int i = 0; i < N_FFT; i++) {
-    hann[i] = 0.5f * (1.0f - cosf(2.0f * PI * i / (N_FFT - 1)));
+  static float hann[N_FFT];
+  static bool hannInit = false;
+  if (!hannInit) {
+    for (int i = 0; i < N_FFT; i++) {
+      hann[i] = 0.5f * (1.0f - cosf(2.0f * PI * i / (N_FFT - 1)));
+    }
+    hannInit = true;
   }
   
-  float melBank[NUM_MFCC][N_FFT/2 + 1];
-  for (int m = 0; m < NUM_MFCC; m++) {
-    float f1 = 2595.0f * log10f(1.0f + 700.0f * m / 2595.0f);
-    float f2 = 2595.0f * log10f(1.0f + 700.0f * (m + 1) / 2595.0f);
+  static float melBank[NUM_MFCC][N_FFT/2 + 1];
+  static bool melInit = false;
+  if (!melInit) {
     float low = 2595.0f * log10f(1.0f + 300.0f / 2595.0f);
     float high = 2595.0f * log10f(1.0f + 8000.0f / 2595.0f);
-    for (int k = 0; k <= N_FFT/2; k++) {
-      float freq = (float)k * SAMPLE_RATE / N_FFT;
-      float mel = 2595.0f * log10f(1.0f + freq / 2595.0f);
-      float melLow = 2595.0f * log10f(1.0f + 300.0f / 2595.0f);
-      float melHigh = 2595.0f * log10f(1.0f + 8000.0f / 2595.0f);
-      if (mel >= low && mel <= high) {
-        float bank = 1.0f - fabsf(mel - (f1 + f2) * 0.5f) / ((f2 - f1) * 0.5f + 1e-10f);
-        melBank[m][k] = fmaxf(0, bank);
-      } else {
-        melBank[m][k] = 0;
+    for (int m = 0; m < NUM_MFCC; m++) {
+      float f1 = 2595.0f * log10f(1.0f + 700.0f * m / 2595.0f);
+      float f2 = 2595.0f * log10f(1.0f + 700.0f * (m + 1) / 2595.0f);
+      for (int k = 0; k <= N_FFT/2; k++) {
+        float freq = (float)k * SAMPLE_RATE / N_FFT;
+        float mel = 2595.0f * log10f(1.0f + freq / 2595.0f);
+        if (mel >= low && mel <= high) {
+          float bank = 1.0f - fabsf(mel - (f1 + f2) * 0.5f) / ((f2 - f1) * 0.5f + 1e-10f);
+          melBank[m][k] = fmaxf(0, bank);
+        } else {
+          melBank[m][k] = 0;
+        }
       }
     }
+    melInit = true;
   }
+  
+  float mfccMean[NUM_MFCC] = {0};
+  float mfccVar[NUM_MFCC] = {0};
   
   for (int frame = 0; frame < numFrames; frame++) {
     int start = frame * HOP_LENGTH;
     
-    float frameData[512];
+    static float frameData[N_FFT];
     for (int i = 0; i < N_FFT; i++) {
       frameData[i] = (i < numSamples - start) ? (float)audio[start + i] * hann[i] : 0;
     }
     
-    float mag[257] = {0};
+    static float mag[N_FFT/2 + 1];
     for (int k = 0; k <= N_FFT/2; k++) {
       float real = 0, imag = 0;
       for (int n = 0; n < N_FFT; n++) {
