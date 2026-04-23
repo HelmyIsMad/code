@@ -16,21 +16,19 @@
 #define HALF_PERIOD() do { __NOP(); __NOP(); __NOP(); } while(0)
 
 #define DC_BLOCK_ALPHA 0.995f
-#define NOISE_THRESHOLD 50
+#define NOISE_THRESHOLD 30
 #define SAMPLE_RATE 16000
-#define DOWNSAMPLE 8
-#define MAX_SAMPLES 5000
+#define MAX_SAMPLES 16000
 
 enum State { IDLE, RECORDING, CLASSIFYING };
 volatile State state = IDLE;
 volatile uint32_t recordingCount = 0;
 volatile uint32_t lastMicros = 0;
-int16_t audioBuffer[MAX_SAMPLES];
+int16_t* audioBuffer = nullptr;
 
 int32_t dcState = 0;
 int16_t lastSample = 0;
 uint32_t lastKeyPress = 0;
-uint32_t sampleCounter = 0;
 
 void setup() {
   Serial.begin(500000);
@@ -42,8 +40,14 @@ void setup() {
   digitalWrite(PIN_SCK, LOW);
   digitalWrite(PIN_WS, HIGH);
   digitalWrite(PIN_LED, HIGH);
+  
+  Serial.print("NUM_FEATURES=");
+  Serial.println(NUM_FEATURES);
+  Serial.print("NUM_SAMPLES=");
+  Serial.println(NUM_SAMPLES);
+  Serial.print("TEMPLATE_SIZE=");
+  Serial.println(TEMPLATE_SIZE);
   Serial.println("Ready");
-  lastMicros = micros();
 }
 
 inline void clockPulse() {
@@ -81,82 +85,96 @@ int16_t applyFilters(int16_t sample) {
 
 void extractFeatures(const int16_t* audio, int numSamples, float* features) {
   for (int i = 0; i < NUM_FEATURES; i++) features[i] = 0;
-  if (numSamples < 1000) return;
+  if (numSamples < 1000) {
+    Serial.println("Too few samples");
+    return;
+  }
   
   float maxVal = 0.001f;
   for (int i = 0; i < numSamples; i++) {
     float v = fabsf((float)audio[i]);
     if (v > maxVal) maxVal = v;
   }
+  Serial.print("maxVal=");
+  Serial.println(maxVal);
   
-  float norm[5000];
+  float sum = 0, sumSq = 0;
   for (int i = 0; i < numSamples; i++) {
-    norm[i] = (float)audio[i] / maxVal;
+    float v = (float)audio[i] / maxVal;
+    sum += fabsf(v);
+    sumSq += v * v;
   }
   
-  int seg_size = numSamples / 16;
   int idx = 0;
+  int seg16 = numSamples / 16;
+  for (int i = 0; i < 16; i++) {
+    float segSum = 0;
+    for (int j = i*seg16; j < (i+1)*seg16; j++) segSum += fabsf((float)audio[j] / maxVal);
+    features[idx++] = segSum / seg16;
+  }
   
   for (int i = 0; i < 16; i++) {
     float segSum = 0;
-    for (int j = i*seg_size; j < (i+1)*seg_size; j++) segSum += fabsf(norm[j]);
-    features[idx++] = segSum / seg_size;
+    for (int j = i*seg16; j < (i+1)*seg16; j++) {
+      float v = (float)audio[j] / maxVal;
+      segSum += v * v;
+    }
+    features[idx++] = sqrtf(segSum / seg16);
   }
   
-  for (int i = 0; i < 16; i++) {
-    float segSum = 0;
-    for (int j = i*seg_size; j < (i+1)*seg_size; j++) segSum += norm[j] * norm[j];
-    features[idx++] = sqrtf(segSum / seg_size);
-  }
-  
-  float sum = 0, sumSq = 0, maxV = 0;
-  for (int i = 0; i < numSamples; i++) {
-    float v = fabsf(norm[i]);
-    sum += v; sumSq += v*v;
-    if (v > maxV) maxV = v;
-  }
   features[idx++] = sum / numSamples;
   features[idx++] = sqrtf(fmaxf(0, sumSq/numSamples - (sum/numSamples)*(sum/numSamples)));
-  features[idx++] = maxV;
-  features[idx++] = 0;
+  features[idx++] = sumSq / numSamples;
+  features[idx++] = sumSq / numSamples;
   
-  int zcr_seg = numSamples / 8;
+  int seg8 = numSamples / 8;
   for (int i = 0; i < 8; i++) {
     int zc = 0;
-    for (int j = i*zcr_seg; j < (i+1)*zcr_seg - 1; j++)
-      if ((norm[j] > 0 && norm[j+1] <= 0) || (norm[j] < 0 && norm[j+1] >= 0)) zc++;
-    features[idx++] = (float)zc / zcr_seg;
+    float prev = (float)audio[i*seg8] / maxVal;
+    for (int j = i*seg8 + 1; j < (i+1)*seg8; j++) {
+      float curr = (float)audio[j] / maxVal;
+      if ((prev > 0 && curr <= 0) || (prev < 0 && curr >= 0)) zc++;
+      prev = curr;
+    }
+    features[idx++] = (float)zc / seg8;
   }
   
   int lags[] = {20, 40, 60, 80, 100, 150, 200, 250, 300, 400};
   for (int l = 0; l < 10; l++) {
     int lag = lags[l];
     float ac = 0, ac0 = 0;
-    for (int i = 0; i < numSamples - lag; i+=10) {
-      ac += norm[i] * norm[i + lag];
-      ac0 += norm[i] * norm[i];
+    for (int i = 0; i < numSamples - lag; i += 10) {
+      float a = (float)audio[i] / maxVal;
+      float b = (float)audio[i + lag] / maxVal;
+      ac += a * b;
+      ac0 += a * a;
     }
     features[idx++] = (ac0 > 0) ? (ac / ac0) : 0;
   }
   
-  // Simple frequency bands without full FFT
   for (int b = 0; b < 16; b++) {
     int start = b * numSamples / 16;
     int end = (b+1) * numSamples / 16;
     float bandSum = 0;
-    for (int i = start; i < end; i++) bandSum += norm[i] * norm[i];
+    for (int i = start; i < end; i++) {
+      float v = (float)audio[i] / maxVal;
+      bandSum += v * v;
+    }
     features[idx++] = bandSum / (end - start);
   }
+  
+  Serial.print("Features extracted: ");
+  Serial.println(idx);
 }
 
 int nearestCentroid(const float* features) {
-  float scaled[NUM_FEATURES];
+  float scaled[70];
   for (int i = 0; i < NUM_FEATURES; i++) {
-    scaled[i] = (features[i] - mean[i]) / (scale[i] + 1e-10f);
+    scaled[i] = (features[i] - mean[i]) / (scale[i] + 1e-6f);
   }
   
   float minDist = 1e10f;
-  int predicted = 0;
+  int predicted = -1;
   
   for (int i = 0; i < NUM_SAMPLES; i++) {
     float dist = 0;
@@ -170,6 +188,10 @@ int nearestCentroid(const float* features) {
       predicted = i;
     }
   }
+  Serial.print("Predicted index: ");
+  Serial.print(predicted);
+  Serial.print(" dist: ");
+  Serial.println(minDist);
   return predicted;
 }
 
@@ -181,10 +203,12 @@ void loop() {
     lastKeyPress = millis();
     
     if (state == IDLE) {
-      memset(audioBuffer, 0, sizeof(audioBuffer));
+      if (audioBuffer == nullptr) {
+        audioBuffer = (int16_t*)malloc(MAX_SAMPLES * sizeof(int16_t));
+      }
+      memset(audioBuffer, 0, MAX_SAMPLES * sizeof(int16_t));
       state = RECORDING;
       recordingCount = 0;
-      sampleCounter = 0;
       dcState = 0;
       lastSample = 0;
       lastMicros = now;
@@ -193,31 +217,40 @@ void loop() {
     } else if (state == RECORDING) {
       state = CLASSIFYING;
       digitalWrite(PIN_LED, HIGH);
-      Serial.print("Stopped (");
+      Serial.print("Stopped, ");
       Serial.print(recordingCount);
-      Serial.println(" samples)");
+      Serial.println(" samples");
       
-      float feat[NUM_FEATURES];
+      float feat[70];
       extractFeatures(audioBuffer, recordingCount, feat);
       int pred = nearestCentroid(feat);
-      Serial.print("Result: ");
-      Serial.println(SPEAKER_NAMES[pred]);
+      
+      if (pred >= 0 && pred < NUM_SAMPLES) {
+        Serial.print("Result: ");
+        Serial.println(SPEAKER_NAMES[pred]);
+      } else {
+        Serial.println("Result: UNKNOWN");
+      }
       
       state = IDLE;
       recordingCount = 0;
     }
   }
   
-  if (state == RECORDING) {
+  if (state == RECORDING && audioBuffer != nullptr) {
     if ((int32_t)(now - lastMicros) >= 62) {
       lastMicros += 62;
-      sampleCounter++;
-      if (sampleCounter % DOWNSAMPLE == 0) {
-        int16_t sample = readSample();
-        sample = applyFilters(sample);
-        if (recordingCount < MAX_SAMPLES) {
-          audioBuffer[recordingCount++] = sample;
-        }
+      
+      int16_t sample = readSample();
+      sample = applyFilters(sample);
+      
+      if (recordingCount < MAX_SAMPLES) {
+        audioBuffer[recordingCount++] = sample;
+      }
+      
+      if (now % 1000000 == 0) {
+        Serial.print("Recording: ");
+        Serial.println(recordingCount);
       }
     }
   }
@@ -225,13 +258,18 @@ void loop() {
   if (state == RECORDING && recordingCount >= MAX_SAMPLES) {
     state = CLASSIFYING;
     digitalWrite(PIN_LED, HIGH);
-    Serial.println("Buffer full. Classifying...");
+    Serial.println("Buffer full");
     
-    float feat[NUM_FEATURES];
+    float feat[70];
     extractFeatures(audioBuffer, recordingCount, feat);
     int pred = nearestCentroid(feat);
-    Serial.print("Result: ");
-    Serial.println(SPEAKER_NAMES[pred]);
+    
+    if (pred >= 0 && pred < NUM_SAMPLES) {
+      Serial.print("Result: ");
+      Serial.println(SPEAKER_NAMES[pred]);
+    } else {
+      Serial.println("Result: UNKNOWN");
+    }
     
     state = IDLE;
     recordingCount = 0;
