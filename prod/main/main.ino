@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <climits>
 #include "model.h"
 
 #define PIN_SCK PB10
@@ -18,7 +19,8 @@
 #define DC_BLOCK_ALPHA 0.995f
 #define NOISE_THRESHOLD 30
 #define SAMPLE_RATE 16000
-#define MAX_SAMPLES 16000
+#define DOWNSAMPLE 8
+#define MAX_SAMPLES 10000
 
 enum State { IDLE, RECORDING, CLASSIFYING };
 volatile State state = IDLE;
@@ -41,12 +43,6 @@ void setup() {
   digitalWrite(PIN_WS, HIGH);
   digitalWrite(PIN_LED, HIGH);
   
-  Serial.print("NUM_FEATURES=");
-  Serial.println(NUM_FEATURES);
-  Serial.print("NUM_SAMPLES=");
-  Serial.println(NUM_SAMPLES);
-  Serial.print("TEMPLATE_SIZE=");
-  Serial.println(TEMPLATE_SIZE);
   Serial.println("Ready");
 }
 
@@ -169,7 +165,7 @@ int nearestCentroid(const float* features) {
   }
   
   int speakerMinDist[5];
-  for (int s = 0; s < 5; s++) speakerMinDist[s] = INT_MAX;
+  for (int s = 0; s < 5; s++) speakerMinDist[s] = 1000000000;
   
   for (int i = 0; i < NUM_SAMPLES; i++) {
     float dist = 0;
@@ -224,7 +220,7 @@ void loop() {
       extractFeatures(audioBuffer, recordingCount, feat);
       int pred = nearestCentroid(feat);
       
-      if (pred >= 0 && pred < NUM_SAMPLES) {
+      if (pred >= 0 && pred < NUM_SPEAKERS) {
         Serial.print("Result: ");
         Serial.println(SPEAKER_NAMES[pred]);
       } else {
@@ -246,11 +242,6 @@ void loop() {
       if (recordingCount < MAX_SAMPLES) {
         audioBuffer[recordingCount++] = sample;
       }
-      
-      if (now % 1000000 == 0) {
-        Serial.print("Recording: ");
-        Serial.println(recordingCount);
-      }
     }
   }
   
@@ -263,7 +254,7 @@ void loop() {
     extractFeatures(audioBuffer, recordingCount, feat);
     int pred = nearestCentroid(feat);
     
-    if (pred >= 0 && pred < NUM_SAMPLES) {
+    if (pred >= 0 && pred < NUM_SPEAKERS) {
       Serial.print("Result: ");
       Serial.println(SPEAKER_NAMES[pred]);
     } else {
