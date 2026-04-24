@@ -6,7 +6,7 @@ import sys
 PORT = 'COM3'  # <--- CHANGE THIS to your Black Pill's COM port
 BAUD = 500000
 OUTPUT_FILE = "stm32_audio.wav"
-SAMPLE_RATE = 14000 
+SAMPLE_RATE = 16000 
 # ---------------------
 
 try:

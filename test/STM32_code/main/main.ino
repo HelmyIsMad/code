@@ -1,24 +1,27 @@
 #include <Arduino.h>
 
-#define PIN_SCK PB10
-#define PIN_WS  PA4
-#define PIN_SD  PA3
+#define PIN_SCK PB13
+#define PIN_WS  PB12
+#define PIN_SD  PB15
 
-#define SCK_HIGH() (GPIOB->BSRR = GPIO_PIN_10)
-#define SCK_LOW()  (GPIOB->BSRR = (uint32_t)GPIO_PIN_10 << 16)
-#define WS_HIGH()  (GPIOA->BSRR = GPIO_PIN_4)
-#define WS_LOW()   (GPIOA->BSRR = (uint32_t)GPIO_PIN_4 << 16)
-#define READ_SD()  (GPIOA->IDR & GPIO_PIN_3)
+#define PIN_BTN PA0
+#define PIN_LED PC13
+
+#define SCK_HIGH() (GPIOB->BSRR = GPIO_PIN_13)
+#define SCK_LOW()  (GPIOB->BSRR = (uint32_t)GPIO_PIN_13 << 16)
+#define WS_HIGH()  (GPIOB->BSRR = GPIO_PIN_12)
+#define WS_LOW()   (GPIOB->BSRR = (uint32_t)GPIO_PIN_12 << 16)
+#define READ_SD()  (GPIOB->IDR & GPIO_PIN_15)
 
 #define HALF_PERIOD() do { \
   __NOP(); __NOP(); __NOP(); \
 } while(0)
 
 #define DC_BLOCK_ALPHA 0.995f
-#define NOISE_THRESHOLD 3000
+#define NOISE_THRESHOLD 300
 
 uint32_t lastMicros = 0;
-const uint32_t interval = 71.0F;
+const uint32_t interval = 62.5F;
 
 int32_t dcState = 0;
 int16_t lastSample = 0;
@@ -28,8 +31,11 @@ void setup() {
   pinMode(PIN_SCK, OUTPUT);
   pinMode(PIN_WS,  OUTPUT);
   pinMode(PIN_SD,  INPUT);
+  pinMode(PIN_BTN, INPUT_PULLDOWN);
+  pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_SCK, LOW);
   digitalWrite(PIN_WS,  HIGH);
+  digitalWrite(PIN_LED, HIGH);
 }
 
 inline void clockPulse() {
