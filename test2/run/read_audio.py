@@ -5,6 +5,8 @@ import time
 import struct
 import sys
 import argparse
+import os
+import datetime
 
 # ── Audio settings ────────────────────────────────────────────────────────────
 BAUD_RATE    = 115200
@@ -134,7 +136,7 @@ def main():
     parser.add_argument(
         '-o', '--output',
         default=OUTPUT_FILE,
-        help=f"Output .wav file (default: {OUTPUT_FILE})"
+        help=f"Output .wav file (default: audio/timestamp.wav)"
     )
     parser.add_argument(
         '-g', '--gain',
@@ -153,6 +155,16 @@ def main():
         list_ports()
         return
 
+    # Handle default output with timestamp
+    if args.output == OUTPUT_FILE:
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        args.output = f'audio/{timestamp}.wav'
+
+    # Ensure the output directory exists
+    output_dir = os.path.dirname(args.output)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
     port = args.port
     if port is None:
         port = find_stm32_port()
@@ -165,5 +177,4 @@ def main():
     record(port, args.output, args.gain)
 
 
-if __name__ == '__main__':
-    main()
+main()
