@@ -1,4 +1,4 @@
-C:/Users/Moham/Desktop/Coding/Embedded/test2/Middlewares/ST/STM32_USB_Device_Library/Core/Inc/usbd_def.h:425:26:SWAPBYTE	32	static
+C:/Users/Moham/Desktop/Coding/Embedded/test2/cmake/stm32cubemx/../../Middlewares/ST/STM32_USB_Device_Library/Core/Inc/usbd_def.h:425:26:SWAPBYTE	32	static
 C:/Users/Moham/Desktop/Coding/Embedded/test2/Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c:104:20:USBD_StdDevReq	24	static
 C:/Users/Moham/Desktop/Coding/Embedded/test2/Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c:167:20:USBD_StdItfReq	24	static
 C:/Users/Moham/Desktop/Coding/Embedded/test2/Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c:239:20:USBD_StdEPReq	24	static
