@@ -11,7 +11,7 @@ C:/Users/Moham/Desktop/Coding/Embedded/test2/Core/Src/syscalls.c:112:5:_lseek	24
 C:/Users/Moham/Desktop/Coding/Embedded/test2/Core/Src/syscalls.c:120:5:_open	12	static
 C:/Users/Moham/Desktop/Coding/Embedded/test2/Core/Src/syscalls.c:128:5:_wait	16	static
 C:/Users/Moham/Desktop/Coding/Embedded/test2/Core/Src/syscalls.c:135:5:_unlink	16	static
-C:/Users/Moham/Desktop/Coding/Embedded/test2/Core/Src/syscalls.c:142:5:_times	16	static
+C:/Users/Moham/Desktop/Coding/Embedded/test2/Core/Src/syscalls.c:142:9:_times	16	static
 C:/Users/Moham/Desktop/Coding/Embedded/test2/Core/Src/syscalls.c:148:5:_stat	16	static
 C:/Users/Moham/Desktop/Coding/Embedded/test2/Core/Src/syscalls.c:155:5:_link	16	static
 C:/Users/Moham/Desktop/Coding/Embedded/test2/Core/Src/syscalls.c:163:5:_fork	8	static
