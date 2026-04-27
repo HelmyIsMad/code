@@ -1,0 +1,8 @@
+/.vscode/
+/build/
+/cmake/
+
+.mxproject
+*.wav
+CMakeLists.txt
+CMakePresets.json

@@ -17,7 +17,7 @@
                     "imageFileName": "${command:st-stm32-ide-debug-launch.get-projects-binary-from-context1}"
                 }
             ],
-            "deviceName": "stm32f401rct6"
+            "deviceName": "STM32F401RCT6"
         }
     ]
 }
