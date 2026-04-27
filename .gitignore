@@ -1,1 +1,13 @@
 *.wav
+*.o
+*.d
+*.elf
+*.hex
+*.bin
+*.map
+
+/build/
+/cmake/
+/.vscode/
+/audio/
+/.run/
